@@ -2,6 +2,7 @@ let currentPage = 1;
 let isLoading = false;
 let hasMore = true;
 let currentCity = "";
+let scrollCooldown = false;
 
 function getPosition() {
   return new Promise((resolve, reject) => {
@@ -34,6 +35,7 @@ async function searchEvents(reset = true) {
 
   const loader = document.createElement("p");
   loader.innerText = "Loading...";
+  loader.id = "loader";
   resultsDiv.appendChild(loader);
 
   try {
@@ -43,11 +45,8 @@ async function searchEvents(reset = true) {
 
     const data = await res.json();
 
-    console.log("API RESPONSE:", data);
+    document.getElementById("loader")?.remove();
 
-    loader.remove();
-
-    // HANDLE API ERROR
     if (data.error) {
       resultsDiv.innerHTML = `<p>⚠️ ${data.error}</p>`;
       isLoading = false;
@@ -57,7 +56,7 @@ async function searchEvents(reset = true) {
     const events = data.events || [];
 
     if (!Array.isArray(events) || events.length === 0) {
-      resultsDiv.innerHTML = "<p>No events found</p>";
+      hasMore = false;
       isLoading = false;
       return;
     }
@@ -87,7 +86,8 @@ async function searchEvents(reset = true) {
 
   } catch (err) {
     console.error(err);
-    resultsDiv.innerHTML = "<p>⚠️ Error loading events</p>";
+    console.log("Loading page:", currentPage);
+    resultsDiv.innerHTML += "<p>⚠️ Error loading events</p>";
   }
 
   isLoading = false;
@@ -158,3 +158,15 @@ window.onload = () => {
   document.getElementById("cityInput").value = "Richmond";
   searchEvents(true);
 };
+
+window.addEventListener("scroll", () => {
+  if (isLoading || !hasMore) return;
+
+  const scrollTop = window.scrollY;
+  const windowHeight = window.innerHeight;
+  const fullHeight = document.documentElement.scrollHeight;
+
+  if (scrollTop + windowHeight >= fullHeight - 150) {
+    loadMore();
+  }
+});
