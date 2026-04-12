@@ -1,23 +1,57 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>City Events Finder</title>
-  <link rel="stylesheet" href="style.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Event Dashboard</title>
+  <link rel="stylesheet" href="style.css"/>
 </head>
+
 <body>
+<div class="container">
 
-  <div class="container">
-    <h1>🎉 City Events Finder</h1>
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="logo">⚡</div>
+    <div class="nav">
+      <div class="nav-item active">🏠</div>
+      <div class="nav-item">📁</div>
+      <div class="nav-item">📅</div>
+      <div class="nav-item">🗑️</div>
+    </div>
+  </aside>
 
-    <div class="search-box">
-      <input type="text" id="cityInput" placeholder="Enter a city (e.g. Richmond)">
+  <!-- Main -->
+  <main class="main">
+
+    <!-- Top Bar -->
+    <div class="topbar">
+      <input id="cityInput" placeholder="Search city (e.g. Richmond)" />
       <button onclick="searchEvents()">Search</button>
+      <img class="avatar" src="https://i.pravatar.cc/40"/>
     </div>
 
-    <div id="results"></div>
-  </div>
+    <h2>Ongoing Events</h2>
 
-  <script src="script.js"></script>
+    <div id="results" class="cards"></div>
+
+  </main>
+
+  <!-- Right Panel -->
+  <aside class="right">
+    <h3>Live Status</h3>
+    <p>Connected to API</p>
+
+    <h3>Stats</h3>
+    <div class="stats">
+      <div class="stat purple">70%</div>
+      <div class="stat orange">58%</div>
+      <div class="stat green">35%</div>
+    </div>
+  </aside>
+
+</div>
+
+<script src="script.js"></script>
 </body>
 </html>

@@ -27,6 +27,8 @@ app.get("/health", (req, res) => {
 // =====================
 app.get("/events", async (req, res) => {
   const city = req.query.city;
+  const page = parseInt(req.query.page) || 1;
+  const limit = parseInt(req.query.limit) || 10;
 
   if (!city) {
     return res.status(400).json({ error: "City required" });
@@ -39,23 +41,7 @@ app.get("/events", async (req, res) => {
 
     let events = [...tm, ...eb, ...gp];
 
-    // 🔥 FALLBACK (prevents empty UI)
-    if (events.length === 0) {
-      events = [
-        {
-          name: "Sample City Event",
-          date: "2026-04-15",
-          location: city
-        },
-        {
-          name: "Community Meetup",
-          date: "2026-04-20",
-          location: city
-        }
-      ];
-    }
-
-    // Remove duplicates
+    // REMOVE DUPLICATES
     const seen = new Set();
     events = events.filter(e => {
       const key = e.name + e.date;
@@ -64,17 +50,28 @@ app.get("/events", async (req, res) => {
       return true;
     });
 
-    // Sort by date
+    // SORT
     events.sort((a, b) => new Date(a.date) - new Date(b.date));
 
-    res.json(events);
+    // PAGINATION
+    const start = (page - 1) * limit;
+    const end = start + limit;
+
+    const paginated = events.slice(start, end);
+
+    return res.json({
+      page,
+      limit,
+      total: events.length,
+      hasMore: end < events.length,
+      events: paginated
+    });
 
   } catch (err) {
     console.error("SERVER ERROR:", err.message);
-    res.status(500).json({ error: "Failed to fetch events" });
+    return res.status(500).json({ error: "Failed to fetch events" });
   }
 });
-
 // =====================
 // 1. TICKETMASTER
 // =====================
@@ -89,6 +86,7 @@ async function getTicketmasterEvents(city) {
     const events = res.data._embedded?.events || [];
 
     return events.map(e => ({
+      image: e.images?.[0]?.url || null,
       name: e.name || "No name",
       date: e.dates?.start?.localDate || "N/A",
       location: e._embedded?.venues?.[0]?.name || "Unknown"
@@ -107,24 +105,31 @@ async function getEventbriteEvents(city) {
   if (!EVENTBRITE_KEY) return [];
 
   try {
-    const url = `https://www.eventbriteapi.com/v3/events/search/?q=${city}`;
-
-    const res = await axios.get(url, {
-      headers: {
-        Authorization: `Bearer ${EVENTBRITE_KEY}`
+    const res = await axios.get(
+      "https://www.eventbriteapi.com/v3/events/search/",
+      {
+        headers: {
+          Authorization: `Bearer ${EVENTBRITE_KEY}`
+        },
+        params: {
+          q: "events in " + city,
+          "location.address": city,
+          expand: "venue"
+        }
       }
-    });
+    );
 
-    const events = res.data.events || [];
+    const events = res.data?.events || [];
 
     return events.map(e => ({
       name: e.name?.text || "No name",
       date: e.start?.local?.split("T")[0] || "N/A",
-      location: city
+      location:
+        e.venue?.address?.localized_address_display || city
     }));
 
   } catch (err) {
-    console.log("Eventbrite error:", err.response?.data || err.message);
+    console.log("Eventbrite FULL ERROR:", err.response?.data || err.message);
     return [];
   }
 }
@@ -160,3 +165,4 @@ async function getGooglePlacesEvents(city) {
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
+
