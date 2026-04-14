@@ -1,17 +1,9 @@
 let currentPage = 1;
 let isLoading = false;
 let hasMore = true;
-let currentCity = "";
-let scrollCooldown = false;
-
-function getPosition() {
-  return new Promise((resolve, reject) => {
-    navigator.geolocation.getCurrentPosition(resolve, reject);
-  });
-}
 
 // =====================
-// SEARCH EVENTS (FIXED)
+// SEARCH EVENTS
 // =====================
 async function searchEvents(reset = true) {
   const city = document.getElementById("cityInput").value.trim();
@@ -30,9 +22,9 @@ async function searchEvents(reset = true) {
     hasMore = true;
   }
 
-  currentCity = city;
   isLoading = true;
 
+  // loader
   const loader = document.createElement("p");
   loader.innerText = "Loading...";
   loader.id = "loader";
@@ -40,15 +32,21 @@ async function searchEvents(reset = true) {
 
   try {
     const res = await fetch(
-      `/events?city=${encodeURIComponent(city)}&page=${currentPage}&limit=10`
+      `/events?city=${encodeURIComponent(city)}&page=${currentPage}&limit=${currentPage}50`
     );
 
-    const data = await res.json();
+    let data;
+    try {
+      data = await res.json();
+    } catch {
+      throw new Error("Invalid JSON");
+    }
 
-    document.getElementById("loader")?.remove();
+    const loaderEl = document.getElementById("loader");
+    if (loaderEl) loaderEl.remove();
 
-    if (data.error) {
-      resultsDiv.innerHTML = `<p>⚠️ ${data.error}</p>`;
+    if (!res.ok || data.error) {
+      resultsDiv.innerHTML += `<p>⚠️ ${data.error || "Server error"}</p>`;
       isLoading = false;
       return;
     }
@@ -73,7 +71,7 @@ async function searchEvents(reset = true) {
       div.className = "card";
 
       div.innerHTML = `
-        <img src="${img}" />
+        <img src="${img}" onerror="this.src='https://images.unsplash.com/photo-1501281668745-f7f57925c3b4'" />
         <div class="card-body">
           <h3>${event.name}</h3>
           <p>📅 ${event.date}</p>
@@ -84,9 +82,18 @@ async function searchEvents(reset = true) {
       resultsDiv.appendChild(div);
     });
 
+    // 🔥 AUTO LOAD MORE IF PAGE NOT SCROLLABLE
+    setTimeout(() => {
+      if (
+        document.documentElement.scrollHeight <= window.innerHeight &&
+        hasMore
+      ) {
+        loadMore();
+      }
+    }, 200);
+
   } catch (err) {
     console.error(err);
-    console.log("Loading page:", currentPage);
     resultsDiv.innerHTML += "<p>⚠️ Error loading events</p>";
   }
 
@@ -94,29 +101,50 @@ async function searchEvents(reset = true) {
 }
 
 // =====================
-// LOAD MORE (FIXED)
+// LOAD MORE
 // =====================
 function loadMore() {
   if (!hasMore || isLoading) return;
 
   currentPage++;
+  console.log("Loading page:", currentPage);
+
   searchEvents(false);
 }
 
 // =====================
-// GEOLOCATION (OPTIONAL)
+// INTERSECTION OBSERVER (BEST SCROLL)
+// =====================
+const sentinel = document.createElement("div");
+sentinel.id = "sentinel";
+document.body.appendChild(sentinel);
+
+const observer = new IntersectionObserver(
+  (entries) => {
+    if (entries[0].isIntersecting && hasMore && !isLoading) {
+      loadMore();
+    }
+  },
+  {
+    root: null,
+    rootMargin: "200px",
+    threshold: 0
+  }
+);
+
+observer.observe(sentinel);
+
+// =====================
+// GEOLOCATION
 // =====================
 async function useMyLocation() {
   const resultsDiv = document.getElementById("results");
   resultsDiv.innerHTML = "📍 Detecting your location...";
 
-  if (!navigator.geolocation) {
-    resultsDiv.innerHTML = "Geolocation not supported";
-    return;
-  }
-
   try {
-    const position = await getPosition();
+    const position = await new Promise((resolve, reject) =>
+      navigator.geolocation.getCurrentPosition(resolve, reject)
+    );
 
     const lat = position.coords.latitude;
     const lon = position.coords.longitude;
@@ -133,10 +161,7 @@ async function useMyLocation() {
       data.address.village ||
       data.address.state;
 
-    if (!city) {
-      resultsDiv.innerHTML = "Could not detect city";
-      return;
-    }
+    if (!city) throw new Error("No city found");
 
     document.getElementById("cityInput").value = city;
 
@@ -144,8 +169,6 @@ async function useMyLocation() {
 
   } catch (err) {
     console.log(err);
-    resultsDiv.innerHTML = "Location failed — using default city";
-
     document.getElementById("cityInput").value = "New York";
     searchEvents(true);
   }
@@ -158,15 +181,3 @@ window.onload = () => {
   document.getElementById("cityInput").value = "Richmond";
   searchEvents(true);
 };
-
-window.addEventListener("scroll", () => {
-  if (isLoading || !hasMore) return;
-
-  const scrollTop = window.scrollY;
-  const windowHeight = window.innerHeight;
-  const fullHeight = document.documentElement.scrollHeight;
-
-  if (scrollTop + windowHeight >= fullHeight - 150) {
-    loadMore();
-  }
-});

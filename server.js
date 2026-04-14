@@ -16,14 +16,14 @@ const EVENTBRITE_KEY = process.env.EVENTBRITE_KEY;
 const GOOGLEPLACES_KEY = process.env.GOOGLEPLACES_KEY;
 
 // =====================
-// HEALTH CHECK (for LB)
+// HEALTH CHECK
 // =====================
 app.get("/health", (req, res) => {
   res.send("OK");
 });
 
 // =====================
-// MAIN ROUTE
+// MAIN ROUTE (FIXED)
 // =====================
 app.get("/events", async (req, res) => {
   const city = req.query.city;
@@ -35,53 +35,72 @@ app.get("/events", async (req, res) => {
   }
 
   try {
-    const tm = await getTicketmasterEvents(city);
-    const eb = await getEventbriteEvents(city);
-    const gp = await getGooglePlacesEvents(city);
+    const [tm, eb, gp] = await Promise.all([
+      getTicketmasterEvents(city, page),
+      getEventbriteEvents(city, page),
+      getGooglePlacesEvents(city) // limited results
+    ]);
 
     let events = [...tm, ...eb, ...gp];
 
+    // =====================
     // REMOVE DUPLICATES
+    // =====================
     const seen = new Set();
     events = events.filter(e => {
-      const key = e.name + e.date;
+      const key = `${e.name}-${e.date}-${e.location}`;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
     });
 
-    // SORT
+    // =====================
+    // SORT BY DATE
+    // =====================
     events.sort((a, b) => new Date(a.date) - new Date(b.date));
 
-    // PAGINATION
-    const start = (page - 1) * limit;
-    const end = start + limit;
+    // =====================
+    // LIMIT RESULTS PER PAGE
+    // =====================
+    const paginated = events.slice(0, limit);
 
-    const paginated = events.slice(start, end);
+    // =====================
+    // SMART hasMore
+    // =====================
+    const hasMore =
+      tm.length > 0 || eb.length > 0;
 
-    return res.json({
-      page,
-      limit,
-      total: events.length,
-      hasMore: end < events.length,
-      events: paginated
+    res.json({
+      events: paginated,
+      hasMore,
+      page
     });
 
   } catch (err) {
-    console.error("SERVER ERROR:", err.message);
-    return res.status(500).json({ error: "Failed to fetch events" });
+    console.error(err.message);
+    res.status(500).json({ error: "Failed to fetch events" });
   }
 });
+
+
 // =====================
-// 1. TICKETMASTER
+// TICKETMASTER (FIXED)
 // =====================
-async function getTicketmasterEvents(city) {
+async function getTicketmasterEvents(city, page = 1) {
   if (!TICKETMASTER_KEY) return [];
 
   try {
-    const url = `https://app.ticketmaster.com/discovery/v2/events.json?apikey=${TICKETMASTER_KEY}&city=${city}`;
-
-    const res = await axios.get(url);
+    const res = await axios.get(
+      "https://app.ticketmaster.com/discovery/v2/events.json",
+      {
+        params: {
+          apikey: TICKETMASTER_KEY,
+          city,
+          page: page - 1, // 🔥 IMPORTANT (0-based)
+          size: 50
+        }
+      }
+    );
 
     const events = res.data._embedded?.events || [];
 
@@ -93,15 +112,16 @@ async function getTicketmasterEvents(city) {
     }));
 
   } catch (err) {
-    console.log("Ticketmaster error:", err.response?.data || err.message);
+    console.log("Ticketmaster error:", err.message);
     return [];
   }
 }
 
+
 // =====================
-// 2. EVENTBRITE
+// EVENTBRITE (FIXED)
 // =====================
-async function getEventbriteEvents(city) {
+async function getEventbriteEvents(city, page = 1) {
   if (!EVENTBRITE_KEY) return [];
 
   try {
@@ -112,9 +132,10 @@ async function getEventbriteEvents(city) {
           Authorization: `Bearer ${EVENTBRITE_KEY}`
         },
         params: {
-          q: "events in " + city,
+          q: city,
           "location.address": city,
-          expand: "venue"
+          expand: "venue",
+          page: page
         }
       }
     );
@@ -124,26 +145,32 @@ async function getEventbriteEvents(city) {
     return events.map(e => ({
       name: e.name?.text || "No name",
       date: e.start?.local?.split("T")[0] || "N/A",
-      location:
-        e.venue?.address?.localized_address_display || city
+      location: e.venue?.address?.localized_address_display || city
     }));
 
   } catch (err) {
-    console.log("Eventbrite FULL ERROR:", err.response?.data || err.message);
+    console.log("Eventbrite error:", err.message);
     return [];
   }
 }
 
+
 // =====================
-// 3. GOOGLE PLACES
+// GOOGLE PLACES (LIMITED)
 // =====================
 async function getGooglePlacesEvents(city) {
   if (!GOOGLEPLACES_KEY) return [];
 
   try {
-    const url = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=events+in+${city}&key=${GOOGLEPLACES_KEY}`;
-
-    const res = await axios.get(url);
+    const res = await axios.get(
+      "https://maps.googleapis.com/maps/api/place/textsearch/json",
+      {
+        params: {
+          query: `events in ${city}`,
+          key: GOOGLEPLACES_KEY
+        }
+      }
+    );
 
     const results = res.data.results || [];
 
@@ -154,10 +181,11 @@ async function getGooglePlacesEvents(city) {
     }));
 
   } catch (err) {
-    console.log("Google Places error:", err.response?.data || err.message);
+    console.log("Google Places error:", err.message);
     return [];
   }
 }
+
 
 // =====================
 // START SERVER
@@ -165,4 +193,3 @@ async function getGooglePlacesEvents(city) {
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
-
